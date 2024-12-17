@@ -1,0 +1,198 @@
+import tkinter as tk
+from tkinter import messagebox, StringVar, OptionMenu
+import random
+
+class GobbletGame:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Гобблет")
+        self.screen_width = self.master.winfo_screenwidth()
+        self.screen_height = self.master.winfo_screenheight()
+        self.master.geometry(f"400x400+{(self.screen_width-400)//2}+{(self.screen_height-400)//2}")
+        
+        self.board = [[None for _ in range(4)] for _ in range(4)]
+        self.player_pieces = {'P1': 3, 'P2': 3, 'P3': 3, 'P4': 3}  # 3 of each size
+        self.computer_pieces = {'C1': 3, 'C2': 3, 'C3': 3, 'C4': 3}  # 3 of each size
+        self.current_player = 'player'  # 'player' or 'computer'
+        
+        self.buttons = [[None for _ in range(4)] for _ in range(4)]
+        self.create_board()
+        self.create_menu()
+        self.show_rules()
+
+    def create_board(self):
+        for row in range(4):
+            for col in range(4):
+                btn = tk.Button(self.master, text='', width=8, height=4,
+                                command=lambda r=row, c=col: self.player_move(r, c))
+                btn.grid(row=row, column=col)
+                self.buttons[row][col] = btn
+                
+        self.update_status()
+
+    def create_menu(self):
+        self.selected_piece_var = StringVar(self.master)
+        self.selected_piece_var.set('P1')
+        piece_options = list(self.player_pieces.keys())
+        
+        piece_menu = OptionMenu(self.master, self.selected_piece_var, *piece_options)
+        piece_menu.grid(row=5, column=0, columnspan=4)
+
+    def update_status(self):
+        status = f"{self.current_player.capitalize()}'s turn. Player pieces: {self.player_pieces}, Computer pieces: {self.computer_pieces}"
+        self.master.title(status)
+
+    def player_move(self, row, col):
+        piece = self.selected_piece_var.get()
+        
+        # Check if the move is valid
+        if self.current_player == 'player':
+            if self.board[row][col] is None and self.player_pieces[piece] > 0:
+                self.board[row][col] = piece
+                self.buttons[row][col].config(text=piece, bg='white', fg='black')
+                self.player_pieces[piece] -= 1  # Decrease the count of player's pieces
+                self.current_player = 'computer'
+                self.check_draw()
+                if not self.check_win():
+                    self.computer_move()
+            elif self.board[row][col] and self.board[row][col][0] == 'C':
+                if self.can_cover(piece, self.board[row][col]):
+                    self.board[row][col] = piece  # Cover opponent's piece
+                    self.buttons[row][col].config(text=piece, bg='white', fg='black')
+                    self.player_pieces[piece] -= 1  # Decrease the count of player's pieces
+                    self.current_player = 'computer'
+                    self.check_draw()
+                    if not self.check_win():
+                        self.computer_move()
+
+    def computer_move(self):
+        blocking_move = self.find_blocking_move()
+        if blocking_move:
+            row, col = blocking_move
+            piece = random.choice(list(self.computer_pieces.keys()))
+            if self.computer_pieces[piece] > 0:
+                self.board[row][col] = piece
+                self.buttons[row][col].config(text=piece, bg='black', fg='white')
+                self.computer_pieces[piece] -= 1
+                self.current_player = 'player'
+                self.check_draw()
+                self.check_win()
+        else:
+            available_moves = [(r, c) for r in range(4) for c in range(4) if self.board[r][c] is None]
+            if available_moves:
+                row, col = random.choice(available_moves)
+                piece = random.choice(list(self.computer_pieces.keys()))
+                if self.computer_pieces[piece] > 0:
+                    self.board[row][col] = piece  # Computer's piece
+                    self.buttons[row][col].config(text=piece, bg='black', fg='white')
+                    self.computer_pieces[piece] -= 1
+                    self.current_player = 'player'
+                    self.check_draw()
+                    self.check_win()
+            elif self.board[row][col] and self.board[row][col][0] == 'P':
+                if self.can_cover(piece, self.board[row][col]):
+                    self.board[row][col] = piece
+                    self.buttons[row][col].config(text=piece, bg='black', fg='white')
+                    self.computer_pieces[piece] -= 1 
+                    self.current_player = 'player'
+                    self.check_draw()
+                    self.check_win()
+
+    def find_blocking_move(self):
+        for r in range(4):
+            if self.check_line([self.board[r][c] for c in range(4)], True):
+                return (r, self.check_line([self.board[r][c] for c in range(4)], True))
+        
+        for c in range(4):
+            if self.check_line([self.board[r][c] for r in range(4)], True):
+                return (self.check_line([self.board[r][c] for r in range(4)], True), c)
+        
+        if self.check_line([self.board[i][i] for i in range(4)], True):
+            return (self.check_line([self.board[i][i] for i in range(4)], True), self.check_line([self.board[i][i] for i in range(4)], True))
+        
+        if self.check_line([self.board[i][3-i] for i in range(4)], True):
+            return (self.check_line([self.board[i][3-i] for i in range(4)], True), 3-self.check_line([self.board[i][3-i] for i in range(4)], True))
+        
+        return None
+
+    def check_line(self, line, return_index=False):
+        if line[0] is not None:
+            player = line[0][0]  # Get the first character (P or C)
+            if all(x is not None and x[0] == player for x in line):
+                if return_index:
+                    for i in range(len(line)):
+                        if line[i] is not None and line[i][0] == player and self.can_cover('C1', line[i]):
+                            return i
+                    return None
+                else:
+                    self.announce_winner(player)
+                    return True
+        return False
+
+    def can_cover(self, covering_piece, covered_piece):
+        cover_rules = {
+            'P1': ['C2', 'C3', 'C4'],
+            'P2': ['C3', 'C4'],
+            'P3': ['C4'],
+            'C1': ['P2', 'P3', 'P4'],
+            'C2': ['P3', 'P4'],
+            'C3': ['P4'],
+        }
+        return covered_piece in cover_rules.get(covering_piece, [])
+
+    def check_win(self):
+        for r in range(4):
+            if self.check_line([self.board[r][c] for c in range(4)]):
+                return True
+        
+        for c in range(4):
+            if self.check_line([self.board[r][c] for r in range(4)]):
+                return True
+        
+        if self.check_line([self.board[i][i] for i in range(4)]) or self.check_line([self.board[i][3-i] for i in range(4)]):
+            return True
+
+        return False
+
+    def check_draw(self):
+        if all(self.board[r][c] is not None for r in range(4) for c in range(4)):
+            messagebox.showinfo("Ничья", "Ничья!")
+            self.ask_restart()
+
+    def announce_winner(self, winner):
+        if winner == 'P':
+            messagebox.showinfo("Победитель", "Игрок выйграл!")
+        else:
+            messagebox.showinfo("Победитель", "Компьютер выйграл!")
+        self.ask_restart()
+
+    def ask_restart(self):
+        if messagebox.askyesno("Игра окончена", "Хочешь играть снова?"):
+            self.restart_game()
+        else:
+            self.master.quit()
+
+    def restart_game(self):
+        self.board = [[None for _ in range(4)] for _ in range(4)]
+        self.player_pieces = {'P1': 3, 'P2': 3, 'P3': 3, 'P4': 3}
+        self.computer_pieces = {'C1': 3, 'C2': 3, 'C3': 3, 'C4': 3}
+        self.current_player = 'player'
+        self.update_buttons()
+        self.update_status()
+
+    def update_buttons(self):
+        for row in range(4):
+            for col in range(4):
+                self.buttons[row][col].config(text='', bg='SystemButtonFace', fg='black')
+
+    def show_rules(self):
+        rules = "Примечание:\n"
+        rules += "P1 может накрыть C2, C3, C4\n"
+        rules += "P2 может накрыть C3, C4\n"
+        rules += "P3 может накрыть C4\n"
+        messagebox.showinfo("Rules", rules)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    game = GobbletGame(root)
+    root.mainloop()
